@@ -55,10 +55,11 @@ public class PCFGParser implements Parser {
       }
     }
     // TODO: Robustly handle shorter sentences
-    for (int span = 2; span < sentence.size(); span++) {
-      for (int begin = 0; begin < sentence.size() - span; begin++) {
+    for (int span = 2; span <= sentence.size(); span++) {
+      for (int begin = 0; begin <= sentence.size() - span; begin++) {
         int end = begin + span;
-        for (int split = begin + 1; split < end - 1; split++) {
+        // TODO: Fixed bug by changing split < end -1 to split <=  end -1
+        for (int split = begin + 1; split <=  end - 1; split++) {
           String leftSpan = getSpanStr(begin, split);
           String rightSpan = getSpanStr(split, end);
           Set<String> leftCellNonterms = grid.getCounter(leftSpan).keySet();
@@ -77,7 +78,10 @@ public class PCFGParser implements Parser {
         boolean added = true;
         while (added) {
           added = false;
-          for (String nonterminal : grid.getCounter(getSpanStr(begin, end)).keySet()) {
+          // TODO: Reconsider this, was getting concurrency issues with iterating through set being modified
+          Set<String> nonterminals = new HashSet();
+          nonterminals.addAll(grid.getCounter(getSpanStr(begin, end)).keySet());
+          for (String nonterminal : nonterminals) {
             for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
               String parentNonterminal = rule.getParent();
               double prob = rule.getScore()*grid.getCount(getSpanStr(begin, end), nonterminal);
@@ -120,6 +124,7 @@ public class PCFGParser implements Parser {
   private Tree<String> buildTree(CounterMap<String, String> grid, HashMap<Triplet<Integer, Integer, String>,
                                  Triplet<Integer, String, String>> back, List<String> sentence) {
     String maxNonterminal = getMaxNonterminal(grid, 0, sentence.size());
+    System.out.println(maxNonterminal);
     Tree<String> parseTree = new Tree<String>(maxNonterminal);
     backtrace(back, parseTree, sentence, 0, sentence.size(), maxNonterminal);
     return parseTree;
@@ -130,12 +135,19 @@ public class PCFGParser implements Parser {
                          String nonterminal) {
     if (isStartCell(begin, end)) {
       // Check if preterminal
-      if (lexicon.isKnown(nonterminal)) {
+      if (lexicon.getAllTags().contains(nonterminal)) {
        // Add corresponding terminal to tree. 
         addToParseTree(parseTree, sentence.get(begin));
       } else {      // Must be a unary rule then
         Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, nonterminal);
         Triplet<Integer, String, String> valTriplet = back.get(keyTriplet);
+        // TODO: Remove
+        if (valTriplet == null) {
+          System.out.println(lexicon.getAllTags());
+          System.out.println(sentence);
+          System.out.println(keyTriplet);
+          System.out.println(back);
+        }
         String childNonterminal = valTriplet.getSecond();
         // Add unary nonterminal to tree
         Tree<String> childTree = addToParseTree(parseTree, childNonterminal);
@@ -145,6 +157,12 @@ public class PCFGParser implements Parser {
       Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, nonterminal);
       Triplet<Integer, String, String> valTriplet = back.get(keyTriplet);
       // Check if it is a unary rule using -1 indication.
+      // TODO: Remove
+      if (valTriplet == null) {
+        System.out.println(sentence);
+        System.out.println(keyTriplet);
+        System.out.println(back);
+      }
       if (valTriplet.getFirst() == -1) {
         String childNonterminal = valTriplet.getSecond();
         // Add unary nonterminal to tree
@@ -183,10 +201,17 @@ public class PCFGParser implements Parser {
   /**
    * Adds child to tree passed in. Child is given the label given.
    * The child tree is returned.
+   * TODO: Discuss better way of doing this
    */
   private Tree<String> addToParseTree(Tree<String> parseTree, String label) {
     Tree<String> childTree = new Tree<String>(label);
-    parseTree.getChildren().add(childTree);
+    List<Tree<String>> newChildren = new ArrayList<Tree<String>>();
+    List<Tree<String>> children = parseTree.getChildren();
+    if (children != null) {
+      newChildren.addAll(children);
+    }
+    newChildren.add(childTree);
+    parseTree.setChildren(newChildren);
     return childTree;
   }
 }
