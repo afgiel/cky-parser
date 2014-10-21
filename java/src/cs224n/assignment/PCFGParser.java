@@ -2,6 +2,7 @@ package cs224n.assignment;
 
 import cs224n.ling.Tree;
 import cs224n.util.CounterMap;
+import cs224n.util.Triplet;
 import java.util.*;
 
 /**
@@ -22,12 +23,13 @@ public class PCFGParser implements Parser {
 
   public Tree<String> getBestParse(List<String> sentence) {
     CounterMap<String, String> grid = new CounterMap<String, String>(); 
-    fillGrid(grid, sentence);
+    HashMap< Triplet<Integer, Integer, String>, Triplet<Integer, String, String> > back = new HashMap< Triplet<Integer, Integer, String>, Triplet<Integer, String, String> >();
+    fillGrid(grid, back, sentence);
     // Pair(x, y).toString then symbol to float  
-    return buildTree(grid, sentence.size());
+    return buildTree(grid, back, sentence);
   }
 
-  private void fillGrid(CounterMap<String, String> grid, List<String> sentence) {
+  private void fillGrid(CounterMap<String, String> grid, HashMap<Triplet<Integer, Integer, String>, Triplet<Integer, String, String>> back, List<String> sentence) {
     for (int i = 0; i < sentence.size(); i++) {
       for (String preterminal : lexicon.getAllTags()) {
         grid.setCount(getSpanStr(i, i+1), preterminal, lexicon.scoreTagging(sentence.get(i), preterminal));
@@ -42,6 +44,10 @@ public class PCFGParser implements Parser {
             double prob = rule.getScore()*grid.getCount(getSpanStr(i, i+1), nonterminal);
             if (prob > grid.getCount(getSpanStr(i, i+1), parentNonterminal)) {
               grid.setCount(getSpanStr(i, i+1), parentNonterminal, prob);
+              Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(i, i+1, parentNonterminal);
+              // -1 indicates unary rule was used to backtrace
+              Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(-1, nonterminal, null);
+              back.put(keyTriplet, valTriplet);
               added = true;
             }
           }
@@ -61,6 +67,9 @@ public class PCFGParser implements Parser {
             double prob = grid.getCount(leftSpan, rule.getLeftChild()) * grid.getCount(rightSpan, rule.getRightChild()) * rule.getScore();
             if (prob > grid.getCount(getSpanStr(begin, end), rule.getParent())) {
               grid.setCount(getSpanStr(begin, end), rule.getParent(), prob);
+              Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, rule.getParent());
+              Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(split, rule.getLeftChild(), rule.getRightChild());
+              back.put(keyTriplet, valTriplet);
             }
           }
         }
@@ -74,6 +83,9 @@ public class PCFGParser implements Parser {
               double prob = rule.getScore()*grid.getCount(getSpanStr(begin, end), nonterminal);
               if (prob > grid.getCount(getSpanStr(begin, end), parentNonterminal)) {
                 grid.setCount(getSpanStr(begin, end), parentNonterminal, prob);
+                Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, parentNonterminal);
+                Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(-1, nonterminal, null);
+                back.put(keyTriplet, valTriplet);
                 added = true;
               }
             }
@@ -105,22 +117,76 @@ public class PCFGParser implements Parser {
     return leftRules;
   }
 
-  private Tree<String> buildTree(CounterMap<String, String> grid, int sentenceSize) {
+  private Tree<String> buildTree(CounterMap<String, String> grid, HashMap<Triplet<Integer, Integer, String>,
+                                 Triplet<Integer, String, String>> back, List<String> sentence) {
+    String maxNonterminal = getMaxNonterminal(grid, 0, sentence.size());
+    Tree<String> parseTree = new Tree<String>(maxNonterminal);
+    backtrace(back, parseTree, sentence, 0, sentence.size(), maxNonterminal);
+    return parseTree;
+  }
+
+  private void backtrace(HashMap<Triplet<Integer, Integer, String>, Triplet<Integer, String, String>> back,
+                         Tree<String> parseTree, List<String> sentence, int begin, int end,
+                         String nonterminal) {
+    if (isStartCell(begin, end)) {
+      // Check if preterminal
+      if (lexicon.isKnown(nonterminal)) {
+       // Add corresponding terminal to tree. 
+        addToParseTree(parseTree, sentence.get(begin));
+      } else {      // Must be a unary rule then
+        Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, nonterminal);
+        Triplet<Integer, String, String> valTriplet = back.get(keyTriplet);
+        String childNonterminal = valTriplet.getSecond();
+        // Add unary nonterminal to tree
+        Tree<String> childTree = addToParseTree(parseTree, childNonterminal);
+        backtrace(back, childTree, sentence, begin, end, childNonterminal);
+      }
+    } else {
+      Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, nonterminal);
+      Triplet<Integer, String, String> valTriplet = back.get(keyTriplet);
+      // Check if it is a unary rule using -1 indication.
+      if (valTriplet.getFirst() == -1) {
+        String childNonterminal = valTriplet.getSecond();
+        // Add unary nonterminal to tree
+        Tree<String> childTree = addToParseTree(parseTree, childNonterminal);
+        backtrace(back, childTree, sentence, begin, end, childNonterminal);
+      // Binary rule
+      } else {
+        // Must add left child first, because children in tree are expected to be ordered.
+        String leftChildNonterminal = valTriplet.getSecond();
+        Tree<String> leftChildTree = addToParseTree(parseTree, leftChildNonterminal);
+        backtrace(back, leftChildTree, sentence, begin, valTriplet.getFirst(), leftChildNonterminal);
+        String rightChildNonterminal = valTriplet.getThird();
+        Tree<String> rightChildTree = addToParseTree(parseTree, rightChildNonterminal);
+        backtrace(back, rightChildTree, sentence, valTriplet.getFirst(), end, rightChildNonterminal);
+      }
+    }
+  }
+
+  private String getMaxNonterminal(CounterMap<String, String> grid, int start, int end) {
     String maxNonterminal = null;
     double maxProb = 0;
-    for (String nonterminal : grid.getCounter(getSpanStr(0, sentenceSize)).keySet()) {
-      double thisProb = grid.getCount(getSpanStr(0, sentenceSize), nonterminal);
+    for (String nonterminal : grid.getCounter(getSpanStr(start, end)).keySet()) {
+      double thisProb = grid.getCount(getSpanStr(start, end), nonterminal);
       if (thisProb > maxProb) {
         maxProb = thisProb;
         maxNonterminal = nonterminal;
       }
     }
-    backtrace(grid, 0, sentenceSize, maxNonterminal);
-    return null;
+    return maxNonterminal;
   }
 
-  private void backtrace(CounterMap<String, String> grid, int begin, int end) {
-
+  private boolean isStartCell(int begin, int end) {
+    return end - begin == 1;
   }
 
+  /**
+   * Adds child to tree passed in. Child is given the label given.
+   * The child tree is returned.
+   */
+  private Tree<String> addToParseTree(Tree<String> parseTree, String label) {
+    Tree<String> childTree = new Tree<String>(label);
+    parseTree.getChildren().add(childTree);
+    return childTree;
+  }
 }
