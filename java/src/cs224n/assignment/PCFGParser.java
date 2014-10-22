@@ -2,8 +2,10 @@ package cs224n.assignment;
 
 import cs224n.ling.Tree;
 import cs224n.ling.Trees;
-import cs224n.util.CounterMap;
 import cs224n.util.Triplet;
+import cs224n.util.CounterMap;
+import cs224n.util.Counter;
+import cs224n.util.Pair;
 import java.util.*;
 
 /**
@@ -45,14 +47,17 @@ public class PCFGParser implements Parser {
       while (added) {
         added = false;
         // TODO: Reconsider this, was getting concurrency issues with iterating through set being modified
-        Set<String> nonterminals = new HashSet();
-        nonterminals.addAll(grid.getCounter(getSpanStr(i, i+1)).keySet());
-        for (String nonterminal : nonterminals) {
+        Counter<Pair<String, String>> newProbs = new Counter<Pair<String, String>>(); 
+        //Set<String> nonterminals = new HashSet();
+        //nonterminals.addAll(grid.getCounter(getSpanStr(i, i+1)).keySet());
+        for (String nonterminal : grid.getCounter(getSpanStr(i, i+1)).keySet()) {
           for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
             String parentNonterminal = rule.getParent();
+            // TODO: POTENTIAL BUG ALERT -> best score might be in newProbs and not in grid ? 
             double prob = rule.getScore()*grid.getCount(getSpanStr(i, i+1), nonterminal);
-            if (prob > grid.getCount(getSpanStr(i, i+1), parentNonterminal)) {
-              grid.setCount(getSpanStr(i, i+1), parentNonterminal, prob);
+            if (prob > grid.getCount(getSpanStr(i, i+1), parentNonterminal) && prob > newProbs.getCount(new Pair<String, String>(getSpanStr(i, i+1), parentNonterminal))) {
+              //grid.setCount(getSpanStr(i, i+1), parentNonterminal, prob);
+              newProbs.setCount(new Pair<String, String>(getSpanStr(i, i+1), parentNonterminal), prob);
               Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(i, i+1, parentNonterminal);
               // -1 indicates unary rule was used to backtrace
               Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(-1, nonterminal, null);
@@ -61,6 +66,7 @@ public class PCFGParser implements Parser {
             }
           }
         }
+        addNewProbs(grid, newProbs);
       }
     }
     // TODO: Robustly handle shorter sentences
@@ -88,14 +94,17 @@ public class PCFGParser implements Parser {
         while (added) {
           added = false;
           // TODO: Reconsider this, was getting concurrency issues with iterating through set being modified
-          Set<String> nonterminals = new HashSet();
-          nonterminals.addAll(grid.getCounter(getSpanStr(begin, end)).keySet());
-          for (String nonterminal : nonterminals) {
+          Counter<Pair<String, String>> newProbs = new Counter<Pair<String, String>>(); 
+          //Set<String> nonterminals = new HashSet();
+          //nonterminals.addAll(grid.getCounter(getSpanStr(begin, end)).keySet());
+          for (String nonterminal : grid.getCounter(getSpanStr(begin, end)).keySet()) {
             for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
               String parentNonterminal = rule.getParent();
+              // TODO: POTENTIAL BUG ALERT -> best score might be in newProbs and not in grid ? 
               double prob = rule.getScore()*grid.getCount(getSpanStr(begin, end), nonterminal);
-              if (prob > grid.getCount(getSpanStr(begin, end), parentNonterminal)) {
-                grid.setCount(getSpanStr(begin, end), parentNonterminal, prob);
+              if (prob > grid.getCount(getSpanStr(begin, end), parentNonterminal) && prob > newProbs.getCount(new Pair<String, String>(getSpanStr(begin, end), parentNonterminal))) {
+                //grid.setCount(getSpanStr(begin, end), parentNonterminal, prob);
+                newProbs.setCount(new Pair<String, String>(getSpanStr(begin, end), parentNonterminal), prob);
                 Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, parentNonterminal);
                 Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(-1, nonterminal, null);
                 back.put(keyTriplet, valTriplet);
@@ -103,10 +112,15 @@ public class PCFGParser implements Parser {
               }
             }
           }
-
-          // ADD Unary
+          addNewProbs(grid, newProbs);
         }
       }
+    }
+  }
+ 
+  private void addNewProbs(CounterMap<String, String> grid, Counter<Pair<String, String>> newProbs) {
+    for (Pair<String, String> keyPair : newProbs.keySet()) {
+      grid.setCount(keyPair.getFirst(), keyPair.getSecond(), newProbs.getCount(keyPair));
     }
   }
 
