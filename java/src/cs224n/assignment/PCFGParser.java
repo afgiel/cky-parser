@@ -40,7 +40,10 @@ public class PCFGParser implements Parser {
   private void fillGrid(CounterMap<String, String> grid, HashMap<Triplet<Integer, Integer, String>, Triplet<Integer, String, String>> back, List<String> sentence) {
     for (int i = 0; i < sentence.size(); i++) {
       for (String preterminal : lexicon.getAllTags()) {
-        grid.setCount(getSpanStr(i, i+1), preterminal, lexicon.scoreTagging(sentence.get(i), preterminal));
+        double prob = lexicon.scoreTagging(sentence.get(i), preterminal);
+        if (prob > 0) {
+          grid.setCount(getSpanStr(i, i+1), preterminal, prob);
+        }
       }
       // Handle unaries
       boolean added = true;
@@ -153,6 +156,7 @@ public class PCFGParser implements Parser {
     if (! maxNonterminal.equals("ROOT")) {
       parseTree.setLabel("ROOT");
       Tree<String> childTree = addToParseTree(parseTree, maxNonterminal);
+      /*
 
       System.out.println("Chosen root node: " + maxNonterminal);
       System.out.println("-------------------------------------------------");
@@ -160,6 +164,7 @@ public class PCFGParser implements Parser {
         double thisProb = grid.getCount(getSpanStr(0, sentence.size()), nonterminal);
         System.out.println(nonterminal + " -- " + thisProb);
       }
+      */
 
 
 
