@@ -127,7 +127,7 @@ public class PCFGParser implements Parser {
     System.out.println(maxNonterminal);
     Tree<String> parseTree = new Tree<String>(maxNonterminal);
     backtrace(back, parseTree, sentence, 0, sentence.size(), maxNonterminal);
-    return parseTree;
+    return TreeAnnotations.unAnnotateTree(parseTree);
   }
 
   private void backtrace(HashMap<Triplet<Integer, Integer, String>, Triplet<Integer, String, String>> back,
