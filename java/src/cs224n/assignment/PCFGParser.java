@@ -1,6 +1,7 @@
 package cs224n.assignment;
 
 import cs224n.ling.Tree;
+import cs224n.ling.Trees;
 import cs224n.util.CounterMap;
 import cs224n.util.Triplet;
 import java.util.*;
@@ -15,7 +16,12 @@ public class PCFGParser implements Parser {
   public void train(List<Tree<String>> trainTrees) {
     List<Tree<String>> annotatedTrainTrees = new ArrayList<Tree<String>>(); 
     for (Tree trainTree : trainTrees) {
-      annotatedTrainTrees.add(TreeAnnotations.annotateTree(trainTree));    
+      Tree<String> anTree =  TreeAnnotations.annotateTree(trainTree);
+      /*
+      System.out.println(Trees.PennTreeRenderer.render(trainTree));
+      System.out.println(Trees.PennTreeRenderer.render(anTree));
+      */
+      annotatedTrainTrees.add(anTree);    
     }
     lexicon = new Lexicon(annotatedTrainTrees);
     grammar = new Grammar(annotatedTrainTrees);
@@ -38,7 +44,10 @@ public class PCFGParser implements Parser {
       boolean added = true;
       while (added) {
         added = false;
-        for (String nonterminal : grid.getCounter(getSpanStr(i, i+1)).keySet()) {
+        // TODO: Reconsider this, was getting concurrency issues with iterating through set being modified
+        Set<String> nonterminals = new HashSet();
+        nonterminals.addAll(grid.getCounter(getSpanStr(i, i+1)).keySet());
+        for (String nonterminal : nonterminals) {
           for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
             String parentNonterminal = rule.getParent();
             double prob = rule.getScore()*grid.getCount(getSpanStr(i, i+1), nonterminal);
@@ -94,6 +103,8 @@ public class PCFGParser implements Parser {
               }
             }
           }
+
+          // ADD Unary
         }
       }
     }
@@ -124,9 +135,24 @@ public class PCFGParser implements Parser {
   private Tree<String> buildTree(CounterMap<String, String> grid, HashMap<Triplet<Integer, Integer, String>,
                                  Triplet<Integer, String, String>> back, List<String> sentence) {
     String maxNonterminal = getMaxNonterminal(grid, 0, sentence.size());
-    System.out.println(maxNonterminal);
     Tree<String> parseTree = new Tree<String>(maxNonterminal);
-    backtrace(back, parseTree, sentence, 0, sentence.size(), maxNonterminal);
+    if (! maxNonterminal.equals("ROOT")) {
+      parseTree.setLabel("ROOT");
+      Tree<String> childTree = addToParseTree(parseTree, maxNonterminal);
+
+      System.out.println("Chosen root node: " + maxNonterminal);
+      System.out.println("-------------------------------------------------");
+      for (String nonterminal : grid.getCounter(getSpanStr(0, sentence.size())).keySet()) {
+        double thisProb = grid.getCount(getSpanStr(0, sentence.size()), nonterminal);
+        System.out.println(nonterminal + " -- " + thisProb);
+      }
+
+
+
+      backtrace(back, childTree, sentence, 0, sentence.size(), maxNonterminal);
+    } else {
+      backtrace(back, parseTree, sentence, 0, sentence.size(), maxNonterminal);
+    }
     return TreeAnnotations.unAnnotateTree(parseTree);
   }
 
@@ -186,12 +212,21 @@ public class PCFGParser implements Parser {
     double maxProb = 0;
     for (String nonterminal : grid.getCounter(getSpanStr(start, end)).keySet()) {
       double thisProb = grid.getCount(getSpanStr(start, end), nonterminal);
-      if (thisProb > maxProb) {
+      if (thisProb >= maxProb) {
+        if (thisProb == maxProb) {
+          maxNonterminal = chooseRoot(nonterminal, maxNonterminal);
+        } else {
+          maxNonterminal = nonterminal;
+        }
         maxProb = thisProb;
-        maxNonterminal = nonterminal;
       }
     }
     return maxNonterminal;
+  }
+
+  private String chooseRoot(String nt1, String nt2) {
+    if (nt1.equals("ROOT")) return nt1;
+    return nt2;
   }
 
   private boolean isStartCell(int begin, int end) {
