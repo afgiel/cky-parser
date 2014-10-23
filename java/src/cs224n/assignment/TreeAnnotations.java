@@ -16,19 +16,56 @@ import cs224n.util.Filter;
  */
 public class TreeAnnotations {
 
-	public static Tree<String> annotateTree(Tree<String> unAnnotatedTree) {
-
-		// Currently, the only annotation done is a lossless binarization
-
-		// TODO: change the annotation from a lossless binarization to a
-		// finite-order markov process (try at least 1st and 2nd order)
-
-		// TODO : mark nodes with the label of their parent nodes, giving a second
-		// order vertical markov process
-
+	public static Tree<String> extraCredAnnotateTree(Tree<String> unAnnotatedTree) {
+    vMarkovize(unAnnotatedTree);
+    vSplit(unAnnotatedTree);
+    System.out.println(unAnnotatedTree);
 		return binarizeTree(unAnnotatedTree);
-
 	}
+
+	public static Tree<String> annotateTree(Tree<String> unAnnotatedTree) {
+    vMarkovize(unAnnotatedTree);
+		return binarizeTree(unAnnotatedTree);
+	}
+
+  private static String vSplit(Tree<String> tree) {
+    if (tree.isLeaf()) return null;
+    else if (tree.getLabel().indexOf("VB") == -1) {
+      for (Tree<String> childTree : tree.getChildren()) {
+        String tempVLabel = vSplit(childTree);
+        if (tempVLabel != null) {
+          if (tree.getLabel().indexOf("VP") == -1) {
+            return tempVLabel;
+          } else {
+            tree.setLabel(tree.getLabel() + "~" + tempVLabel);
+            return null;
+          }
+        }
+      }
+      return null;
+    } else {
+      return tree.getLabel();
+    }
+  }
+
+  private static void vMarkovize(Tree<String> tree) {
+    if (!tree.isLeaf()) {
+      String parent = tree.getLabel();
+      for (Tree<String> childTree : tree.getChildren()) {
+        vMarkovizeHelper(childTree, parent);
+      }
+    }
+  }
+
+  private static void  vMarkovizeHelper(Tree<String> tree, String parent) {
+    if (!tree.isLeaf()) {
+      String newParentLabel = tree.getLabel();
+      tree.setLabel(newParentLabel + "^" + parent);
+      for (Tree<String> childTree : tree.getChildren()) {
+        vMarkovizeHelper(childTree, newParentLabel);
+      }
+    }
+  }
 
 	private static Tree<String> binarizeTree(Tree<String> tree) {
 		String label = tree.getLabel();
