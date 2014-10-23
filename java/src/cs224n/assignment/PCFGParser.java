@@ -133,7 +133,7 @@ public class PCFGParser implements Parser {
 
   private int getGridIndex(int x, int y) {
     int index = -1;
-    for (int i = x; i > 0; i--) {
+    for (int i = 0; i < x; i++) {
       index += sentenceSize-i; 
     }
     index += (y - x);
