@@ -34,6 +34,10 @@ public class PCFGParser implements Parser {
     return buildTree(sentence);
   }
 
+  // Combine maps for backtrace and grid
+  // Identity Hash Map
+  // Reconsider concurrency
+
   private void fillGrid(List<String> sentence) {
     for (int i = 0; i < sentence.size(); i++) {
       String interval = getSpanStr(i, i+1);
@@ -48,15 +52,16 @@ public class PCFGParser implements Parser {
       while (added) {
         added = false;
         // TODO: Reconsider this, was getting concurrency issues with iterating through set being modified
-        Counter<Pair<String, String>> newProbs = new Counter<Pair<String, String>>(); 
-        for (String nonterminal : grid.getCounter(interval).keySet()) {
+        Set<String> nonterminals = new HashSet();
+        nonterminals.addAll(grid.getCounter(interval).keySet());
+        for (String nonterminal : nonterminals) {
           double nontermProb = grid.getCount(interval, nonterminal); 
           for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
             String parentNonterminal = rule.getParent();
             // TODO: POTENTIAL BUG ALERT -> best score might be in newProbs and not in grid ? 
             double prob = rule.getScore()*nontermProb;
-            if (prob > grid.getCount(interval, parentNonterminal) && prob > newProbs.getCount(new Pair<String, String>(interval, parentNonterminal))) {
-              newProbs.setCount(new Pair<String, String>(interval, parentNonterminal), prob);
+            if (prob > grid.getCount(interval, parentNonterminal)) {
+              grid.setCount(interval, parentNonterminal, prob);
               Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(i, i+1, parentNonterminal);
               // -1 indicates unary rule was used to backtrace
               Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(-1, nonterminal, null);
@@ -65,7 +70,6 @@ public class PCFGParser implements Parser {
             }
           }
         }
-        addNewProbs(newProbs);
       }
     }
     // TODO: Robustly handle shorter sentences
@@ -96,19 +100,16 @@ public class PCFGParser implements Parser {
         while (added) {
           added = false;
           // TODO: Reconsider this, was getting concurrency issues with iterating through set being modified
-          Counter<Pair<String, String>> newProbs = new Counter<Pair<String, String>>(); 
-          //Set<String> nonterminals = new HashSet();
-          //nonterminals.addAll(grid.getCounter(getSpanStr(begin, end)).keySet());
-
-          for (String nonterminal : grid.getCounter(interval).keySet()) {
+          Set<String> nonterminals = new HashSet();
+          nonterminals.addAll(grid.getCounter(interval).keySet());
+          for (String nonterminal : nonterminals) {
             double nontermProb = grid.getCount(interval, nonterminal); 
             for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
               String parentNonterminal = rule.getParent();
               // TODO: POTENTIAL BUG ALERT -> best score might be in newProbs and not in grid ? 
               double prob = rule.getScore()*nontermProb;
-              if (prob > grid.getCount(interval, parentNonterminal) && prob > newProbs.getCount(new Pair<String, String>(interval, parentNonterminal))) {
-                //grid.setCount(getSpanStr(begin, end), parentNonterminal, prob);
-                newProbs.setCount(new Pair<String, String>(interval, parentNonterminal), prob);
+              if (prob > grid.getCount(interval, parentNonterminal)) {
+                grid.setCount(interval, parentNonterminal, prob);
                 Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, parentNonterminal);
                 Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(-1, nonterminal, null);
                 back.put(keyTriplet, valTriplet);
@@ -116,7 +117,6 @@ public class PCFGParser implements Parser {
               }
             }
           }
-          addNewProbs(newProbs);
         }
       }
     }
