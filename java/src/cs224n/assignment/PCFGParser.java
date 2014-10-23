@@ -7,6 +7,7 @@ import cs224n.util.CounterMap;
 import cs224n.util.Counter;
 import cs224n.util.ICounter;
 import cs224n.util.Pair;
+import cs224n.util.Interner;
 import java.util.*;
 
 /**
@@ -16,6 +17,7 @@ public class PCFGParser implements Parser {
   private Grammar grammar;
   private Lexicon lexicon;
   private int sentenceSize; 
+  private Interner<String> interner;
 
   public void train(List<Tree<String>> trainTrees) {
     List<Tree<String>> annotatedTrainTrees = new ArrayList<Tree<String>>(); 
@@ -35,6 +37,7 @@ public class PCFGParser implements Parser {
     sentenceSize = sentence.size();
     List<ICounter<String>> grid = new ArrayList<ICounter<String>>(); 
     initGrid(grid);
+    interner = new Interner<String>();
     HashMap< Triplet<Integer, Integer, String>, Triplet<Integer, String, String> > back = new HashMap< Triplet<Integer, Integer, String>, Triplet<Integer, String, String> >();
     fillGrid(grid, back, sentence);
     // Pair(x, y).toString then symbol to float  
@@ -44,7 +47,7 @@ public class PCFGParser implements Parser {
   private void fillGrid(List<ICounter<String>> grid, HashMap<Triplet<Integer, Integer, String>, Triplet<Integer, String, String>> back, List<String> sentence) {
     for (int i = 0; i < sentenceSize; i++) {
       for (String preterminal : lexicon.getAllTags()) {
-        grid.get(getGridIndex(i, i+1)).setCount(preterminal, lexicon.scoreTagging(sentence.get(i), preterminal));
+        grid.get(getGridIndex(i, i+1)).setCount(interner.intern(preterminal), lexicon.scoreTagging(sentence.get(i), preterminal));
       }
       // Handle unaries
       boolean added = true;
@@ -57,7 +60,7 @@ public class PCFGParser implements Parser {
             String parentNonterminal = rule.getParent();
             // TODO: POTENTIAL BUG ALERT -> best score might be in newProbs and not in grid ? 
             double prob = rule.getScore()*grid.get(getGridIndex(i, i+1)).getCount(nonterminal);
-            if (prob > grid.get(getGridIndex(i, i+1)).getCount(parentNonterminal) && prob > newProbs.getCount(new Pair<Integer, String>(getGridIndex(i, i+1), parentNonterminal))) {
+            if (prob > grid.get(getGridIndex(i, i+1)).getCount(interner.intern(parentNonterminal)) && prob > newProbs.getCount(new Pair<Integer, String>(getGridIndex(i, i+1), parentNonterminal))) {
               newProbs.setCount(new Pair<Integer, String>(getGridIndex(i, i+1), parentNonterminal), prob);
               Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(i, i+1, parentNonterminal);
               // -1 indicates unary rule was used to backtrace
@@ -77,11 +80,11 @@ public class PCFGParser implements Parser {
         // TODO: Fixed bug by changing split < end -1 to split <=  end -1
         for (int split = begin + 1; split <=  end - 1; split++) {
           int leftIndex = getGridIndex(begin, split);
-          int  rightIndex = getGridIndex(split, end);
+          int rightIndex = getGridIndex(split, end);
           Set<String> leftCellNonterms = grid.get(leftIndex).keySet();
           Set<String> rightCellNonterms = grid.get(rightIndex).keySet();
           for (Grammar.BinaryRule rule : getPossibleBinaryRules(leftCellNonterms, rightCellNonterms)) {
-            double prob = grid.get(leftIndex).getCount(rule.getLeftChild()) * grid.get(rightIndex).getCount(rule.getRightChild()) * rule.getScore();
+            double prob = grid.get(leftIndex).getCount(interner.intern(rule.getLeftChild())) * grid.get(rightIndex).getCount(interner.intern(rule.getRightChild())) * rule.getScore();
             if (prob > grid.get(getGridIndex(begin, end)).getCount(rule.getParent())) {
               grid.get(getGridIndex(begin, end)).setCount(rule.getParent(), prob);
               Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, rule.getParent());
@@ -91,7 +94,7 @@ public class PCFGParser implements Parser {
           }
         }
         // Handle unaries
-        boolean added = true;
+        boolean added = true; 
         while (added) {
           added = false;
           // TODO: Reconsider this, was getting concurrency issues with iterating through set being modified
@@ -100,8 +103,8 @@ public class PCFGParser implements Parser {
             for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
               String parentNonterminal = rule.getParent();
               // TODO: POTENTIAL BUG ALERT -> best score might be in newProbs and not in grid ? 
-              double prob = rule.getScore()*grid.get(getGridIndex(begin, end)).getCount(nonterminal);
-              if (prob > grid.get(getGridIndex(begin, end)).getCount(parentNonterminal) && prob > newProbs.getCount(new Pair<Integer, String>(getGridIndex(begin, end), parentNonterminal))) {
+              double prob = rule.getScore()*grid.get(getGridIndex(begin, end)).getCount(interner.intern(nonterminal));
+              if (prob > grid.get(getGridIndex(begin, end)).getCount(interner.intern(parentNonterminal)) && prob > newProbs.getCount(new Pair<Integer, String>(getGridIndex(begin, end), parentNonterminal))) {
                 newProbs.setCount(new Pair<Integer, String>(getGridIndex(begin, end), parentNonterminal), prob);
                 Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, parentNonterminal);
                 Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(-1, nonterminal, null);
@@ -142,7 +145,7 @@ public class PCFGParser implements Parser {
 
   private void addNewProbs(List<ICounter<String>> grid, Counter<Pair<Integer, String>> newProbs) {
     for (Pair<Integer, String> keyPair : newProbs.keySet()) {
-      grid.get(keyPair.getFirst()).setCount(keyPair.getSecond(), newProbs.getCount(keyPair));
+      grid.get(keyPair.getFirst()).setCount(interner.intern(keyPair.getSecond()), newProbs.getCount(keyPair));
     }
   }
 
@@ -170,17 +173,18 @@ public class PCFGParser implements Parser {
 
   private Tree<String> buildTree(List<ICounter<String>> grid, HashMap<Triplet<Integer, Integer, String>,
                                  Triplet<Integer, String, String>> back, List<String> sentence) {
+    System.out.println(sentence);
     String maxNonterminal = getMaxNonterminal(grid, 0, sentence.size());
     Tree<String> parseTree = new Tree<String>(maxNonterminal);
     if (! maxNonterminal.equals("ROOT")) {
       parseTree.setLabel("ROOT");
       Tree<String> childTree = addToParseTree(parseTree, maxNonterminal);
 
-      System.out.println("Chosen root node: " + maxNonterminal);
-      System.out.println("-------------------------------------------------");
+      //System.out.println("Chosen root node: " + maxNonterminal);
+      //System.out.println("-------------------------------------------------");
       for (String nonterminal : grid.get(getGridIndex(0, sentenceSize)).keySet()) {
         double thisProb = grid.get(getGridIndex(0, sentenceSize)).getCount(nonterminal);
-        System.out.println(nonterminal + " -- " + thisProb);
+        //System.out.println(nonterminal + " -- " + thisProb);
       }
 
 
@@ -195,6 +199,12 @@ public class PCFGParser implements Parser {
   private void backtrace(HashMap<Triplet<Integer, Integer, String>, Triplet<Integer, String, String>> back,
                          Tree<String> parseTree, List<String> sentence, int begin, int end,
                          String nonterminal) {
+    //System.out.println(String.format("b:%d, e:%d, n:%s", begin, end, nonterminal));
+    //try {
+     // Thread.sleep(100);
+    //} catch (Exception e ) {
+     // System.out.println(e);
+    //} 
     if (isStartCell(begin, end)) {
       // Check if preterminal
       if (lexicon.getAllTags().contains(nonterminal)) {
@@ -212,7 +222,7 @@ public class PCFGParser implements Parser {
         }
         String childNonterminal = valTriplet.getSecond();
         // Add unary nonterminal to tree
-        Tree<String> childTree = addToParseTree(parseTree, childNonterminal);
+        Tree<String> childTree = addToParseTree(parseTree, childNonterminal); 
         backtrace(back, childTree, sentence, begin, end, childNonterminal);
       }
     } else {
