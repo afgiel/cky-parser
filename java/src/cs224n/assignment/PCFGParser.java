@@ -3,8 +3,6 @@ package cs224n.assignment;
 import cs224n.ling.Tree;
 import cs224n.ling.Trees;
 import cs224n.util.Triplet;
-import cs224n.util.CounterMap;
-import cs224n.util.Counter;
 import cs224n.util.Pair;
 import java.util.*;
 
@@ -15,8 +13,7 @@ public class PCFGParser implements Parser {
 
   private Grammar grammar;
   private Lexicon lexicon;
-  private CounterMap<String, String> grid;
-  private HashMap< Triplet<Integer, Integer, String>, Triplet<Integer, String, String> > back;
+  private CKYGrid grid;
 
   public void train(List<Tree<String>> trainTrees) {
     List<Tree<String>> annotatedTrainTrees = new ArrayList<Tree<String>>(); 
@@ -28,8 +25,7 @@ public class PCFGParser implements Parser {
   }
 
   public Tree<String> getBestParse(List<String> sentence) {
-    grid = new CounterMap<String, String>(); 
-    back = new HashMap< Triplet<Integer, Integer, String>, Triplet<Integer, String, String> >();
+    grid = new CKYGrid(); 
     fillGrid(sentence);
     return buildTree(sentence);
   }
@@ -44,7 +40,7 @@ public class PCFGParser implements Parser {
       for (String preterminal : lexicon.getAllTags()) {
         double prob = lexicon.scoreTagging(sentence.get(i), preterminal);
         if (prob > 0) {
-          grid.setCount(interval, preterminal, prob);
+          grid.setBoth(interval, preterminal, prob, null);
         }
       }
       // Handle unaries
@@ -53,19 +49,17 @@ public class PCFGParser implements Parser {
         added = false;
         // TODO: Reconsider this, was getting concurrency issues with iterating through set being modified
         Set<String> nonterminals = new HashSet();
-        nonterminals.addAll(grid.getCounter(interval).keySet());
+        nonterminals.addAll(grid.nonterminalSet(interval));
         for (String nonterminal : nonterminals) {
-          double nontermProb = grid.getCount(interval, nonterminal); 
+          double nontermProb = grid.getProb(interval, nonterminal); 
           for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
             String parentNonterminal = rule.getParent();
             // TODO: POTENTIAL BUG ALERT -> best score might be in newProbs and not in grid ? 
             double prob = rule.getScore()*nontermProb;
-            if (prob > grid.getCount(interval, parentNonterminal)) {
-              grid.setCount(interval, parentNonterminal, prob);
-              Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(i, i+1, parentNonterminal);
+            if (prob > grid.getProb(interval, parentNonterminal)) {
               // -1 indicates unary rule was used to backtrace
               Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(-1, nonterminal, null);
-              back.put(keyTriplet, valTriplet);
+              grid.setBoth(interval, parentNonterminal, prob, valTriplet);
               added = true;
             }
           }
@@ -80,18 +74,16 @@ public class PCFGParser implements Parser {
         for (int split = begin + 1; split <=  end - 1; split++) {
           String leftSpan = getSpanStr(begin, split);
           String rightSpan = getSpanStr(split, end);
-          Set<String> leftCellNonterms = grid.getCounter(leftSpan).keySet();
-          Set<String> rightCellNonterms = grid.getCounter(rightSpan).keySet();
+          Set<String> leftCellNonterms = grid.nonterminalSet(leftSpan);
+          Set<String> rightCellNonterms = grid.nonterminalSet(rightSpan);
           for (Grammar.BinaryRule rule : getPossibleBinaryRules(leftCellNonterms, rightCellNonterms)) {
             String parent = rule.getParent();
             String rightChild = rule.getRightChild();
             String leftChild = rule.getLeftChild();
-            double prob = grid.getCount(leftSpan, leftChild) * grid.getCount(rightSpan, rightChild) * rule.getScore();
-            if (prob > grid.getCount(interval, parent)) {
-              grid.setCount(interval, parent, prob);
-              Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, parent);
+            double prob = grid.getProb(leftSpan, leftChild) * grid.getProb(rightSpan, rightChild) * rule.getScore();
+            if (prob > grid.getProb(interval, parent)) {
               Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(split, leftChild, rightChild);
-              back.put(keyTriplet, valTriplet);
+              grid.setBoth(interval, parent, prob, valTriplet);
             }
           }
         }
@@ -101,18 +93,16 @@ public class PCFGParser implements Parser {
           added = false;
           // TODO: Reconsider this, was getting concurrency issues with iterating through set being modified
           Set<String> nonterminals = new HashSet();
-          nonterminals.addAll(grid.getCounter(interval).keySet());
+          nonterminals.addAll(grid.nonterminalSet(interval));
           for (String nonterminal : nonterminals) {
-            double nontermProb = grid.getCount(interval, nonterminal); 
+            double nontermProb = grid.getProb(interval, nonterminal); 
             for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
               String parentNonterminal = rule.getParent();
               // TODO: POTENTIAL BUG ALERT -> best score might be in newProbs and not in grid ? 
               double prob = rule.getScore()*nontermProb;
-              if (prob > grid.getCount(interval, parentNonterminal)) {
-                grid.setCount(interval, parentNonterminal, prob);
-                Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, parentNonterminal);
+              if (prob > grid.getProb(interval, parentNonterminal)) {
                 Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(-1, nonterminal, null);
-                back.put(keyTriplet, valTriplet);
+                grid.setBoth(interval, parentNonterminal, prob, valTriplet);
                 added = true;
               }
             }
@@ -122,12 +112,6 @@ public class PCFGParser implements Parser {
     }
   }
  
-  private void addNewProbs(Counter<Pair<String, String>> newProbs) {
-    for (Pair<String, String> keyPair : newProbs.keySet()) {
-      grid.setCount(keyPair.getFirst(), keyPair.getSecond(), newProbs.getCount(keyPair));
-    }
-  }
-
   private String getSpanStr(int x, int y) {
     return String.format("%d,%d", x, y);
   }
@@ -160,16 +144,14 @@ public class PCFGParser implements Parser {
        // Add corresponding terminal to tree. 
         addToParseTree(parseTree, sentence.get(begin));
       } else {      // Must be a unary rule then
-        Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, nonterminal);
-        Triplet<Integer, String, String> valTriplet = back.get(keyTriplet);
+        Triplet<Integer, String, String> valTriplet = grid.getBack(getSpanStr(begin, end), nonterminal);
         String childNonterminal = valTriplet.getSecond();
         // Add unary nonterminal to tree
         Tree<String> childTree = addToParseTree(parseTree, childNonterminal);
         backtrace(childTree, sentence, begin, end, childNonterminal);
       }
     } else {
-      Triplet<Integer, Integer, String> keyTriplet = new Triplet<Integer,Integer,String>(begin, end, nonterminal);
-      Triplet<Integer, String, String> valTriplet = back.get(keyTriplet);
+      Triplet<Integer, String, String> valTriplet = grid.getBack(getSpanStr(begin, end), nonterminal);
       // Check if it is a unary rule using -1 indication.
       if (valTriplet.getFirst() == -1) {
         String childNonterminal = valTriplet.getSecond();
