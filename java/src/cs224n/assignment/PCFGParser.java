@@ -54,10 +54,11 @@ public class PCFGParser implements Parser {
         //Set<String> nonterminals = new HashSet();
         //nonterminals.addAll(grid.getCounter(getSpanStr(i, i+1)).keySet());
         for (String nonterminal : grid.getCounter(getSpanStr(i, i+1)).keySet()) {
+          double nontermProb = grid.getCount(getSpanStr(i, i+1), nonterminal); 
           for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
             String parentNonterminal = rule.getParent();
             // TODO: POTENTIAL BUG ALERT -> best score might be in newProbs and not in grid ? 
-            double prob = rule.getScore()*grid.getCount(getSpanStr(i, i+1), nonterminal);
+            double prob = rule.getScore()*nontermProb;
             if (prob > grid.getCount(getSpanStr(i, i+1), parentNonterminal) && prob > newProbs.getCount(new Pair<String, String>(getSpanStr(i, i+1), parentNonterminal))) {
               //grid.setCount(getSpanStr(i, i+1), parentNonterminal, prob);
               newProbs.setCount(new Pair<String, String>(getSpanStr(i, i+1), parentNonterminal), prob);
@@ -101,10 +102,11 @@ public class PCFGParser implements Parser {
           //Set<String> nonterminals = new HashSet();
           //nonterminals.addAll(grid.getCounter(getSpanStr(begin, end)).keySet());
           for (String nonterminal : grid.getCounter(getSpanStr(begin, end)).keySet()) {
+            double nontermProb = grid.getCount(getSpanStr(begin, end), nonterminal); 
             for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
               String parentNonterminal = rule.getParent();
               // TODO: POTENTIAL BUG ALERT -> best score might be in newProbs and not in grid ? 
-              double prob = rule.getScore()*grid.getCount(getSpanStr(begin, end), nonterminal);
+              double prob = rule.getScore()*nontermProb;
               if (prob > grid.getCount(getSpanStr(begin, end), parentNonterminal) && prob > newProbs.getCount(new Pair<String, String>(getSpanStr(begin, end), parentNonterminal))) {
                 //grid.setCount(getSpanStr(begin, end), parentNonterminal, prob);
                 newProbs.setCount(new Pair<String, String>(getSpanStr(begin, end), parentNonterminal), prob);
