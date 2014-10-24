@@ -7,6 +7,10 @@ import cs224n.util.Pair;
 import cs224n.util.Triplet;
 import java.util.Set;
 
+/*
+ * Data structure that combines the dynamic programming grid used in CKY
+ * with the needed backtrace information to create the best parse.
+ */
 public class CKYGrid {
 
   private MapFactory<String, Pair<Double, Triplet<Integer, String, String>>> mf;

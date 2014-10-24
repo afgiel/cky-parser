@@ -16,10 +16,12 @@ import cs224n.util.Filter;
  */
 public class TreeAnnotations {
 
+  /*
+   * Adds the Vsplit annotations for extra credit!
+   */
 	public static Tree<String> extraCredAnnotateTree(Tree<String> unAnnotatedTree) {
     vMarkovize(unAnnotatedTree);
     vSplit(unAnnotatedTree);
-    System.out.println(unAnnotatedTree);
 		return binarizeTree(unAnnotatedTree);
 	}
 

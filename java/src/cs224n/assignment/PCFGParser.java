@@ -30,10 +30,6 @@ public class PCFGParser implements Parser {
     return buildTree(sentence);
   }
 
-  // Combine maps for backtrace and grid
-  // Identity Hash Map
-  // Reconsider concurrency
-
   private void fillGrid(List<String> sentence) {
     for (int i = 0; i < sentence.size(); i++) {
       String interval = getSpanStr(i, i+1);
@@ -47,17 +43,14 @@ public class PCFGParser implements Parser {
       boolean added = true;
       while (added) {
         added = false;
-        // TODO: Reconsider this, was getting concurrency issues with iterating through set being modified
         Set<String> nonterminals = new HashSet();
         nonterminals.addAll(grid.nonterminalSet(interval));
         for (String nonterminal : nonterminals) {
           double nontermProb = grid.getProb(interval, nonterminal); 
           for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
             String parentNonterminal = rule.getParent();
-            // TODO: POTENTIAL BUG ALERT -> best score might be in newProbs and not in grid ? 
             double prob = rule.getScore()*nontermProb;
             if (prob > grid.getProb(interval, parentNonterminal)) {
-              // -1 indicates unary rule was used to backtrace
               Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(-1, nonterminal, null);
               grid.setBoth(interval, parentNonterminal, prob, valTriplet);
               added = true;
@@ -66,7 +59,6 @@ public class PCFGParser implements Parser {
         }
       }
     }
-    // TODO: Robustly handle shorter sentences
     for (int span = 2; span <= sentence.size(); span++) {
       for (int begin = 0; begin <= sentence.size() - span; begin++) {
         int end = begin + span;
@@ -91,14 +83,12 @@ public class PCFGParser implements Parser {
         boolean added = true;
         while (added) {
           added = false;
-          // TODO: Reconsider this, was getting concurrency issues with iterating through set being modified
           Set<String> nonterminals = new HashSet();
           nonterminals.addAll(grid.nonterminalSet(interval));
           for (String nonterminal : nonterminals) {
             double nontermProb = grid.getProb(interval, nonterminal); 
             for (Grammar.UnaryRule rule : grammar.getUnaryRulesByChild(nonterminal)) {
               String parentNonterminal = rule.getParent();
-              // TODO: POTENTIAL BUG ALERT -> best score might be in newProbs and not in grid ? 
               double prob = rule.getScore()*nontermProb;
               if (prob > grid.getProb(interval, parentNonterminal)) {
                 Triplet<Integer, String, String> valTriplet = new Triplet<Integer, String, String>(-1, nonterminal, null);
@@ -178,7 +168,6 @@ public class PCFGParser implements Parser {
   /**
    * Adds child to tree passed in. Child is given the label given.
    * The child tree is returned.
-   * TODO: Discuss better way of doing this
    */
   private Tree<String> addToParseTree(Tree<String> parseTree, String label) {
     Tree<String> childTree = new Tree<String>(label);
